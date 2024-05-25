@@ -1,0 +1,15 @@
+{
+  "name": "allauth-fetch",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "allauth",
+    "django"
+  ],
+  "author": "Stephan Fitzpatrick",
+  "license": "MIT",
+  "description": "client library for django-allauth (https://docs.allauth.org/en/latest/headless/openapi-specification/)"
+}
