@@ -1,6 +1,6 @@
 type Client = "app" | "browser";
 
-interface ConfigurationResponse {
+export interface ConfigurationResponse {
   status: number;
   data: {
     account: {
@@ -18,7 +18,7 @@ interface ConfigurationResponse {
   };
 }
 
-interface Provider {
+export interface Provider {
   id: string;
   name: string;
   client_id?: string;
@@ -39,7 +39,7 @@ interface AuthenticationResponse {
   };
 }
 
-interface Flow {
+export interface Flow {
   id:
     | "verify_email"
     | "login"
@@ -54,7 +54,7 @@ interface Flow {
   is_pending?: boolean;
 }
 
-interface AuthenticatedResponse {
+export interface AuthenticatedResponse {
   status: number;
   data: {
     user: User;
@@ -100,7 +100,7 @@ type AuthenticationMethod =
       reauthenticated?: boolean;
     };
 
-interface ErrorResponse {
+export interface ErrorResponse {
   status: number;
   errors: {
     code: string;
@@ -109,7 +109,7 @@ interface ErrorResponse {
   }[];
 }
 
-interface NotAuthenticatedResponse {
+export interface NotAuthenticatedResponse {
   status: number;
   data: {
     flows: Flow[];
@@ -121,11 +121,11 @@ interface NotAuthenticatedResponse {
   };
 }
 
-interface ForbiddenResponse {
+export interface ForbiddenResponse {
   status: 403;
 }
 
-interface NoAuthenticatedSessionResponse {
+export interface NoAuthenticatedSessionResponse {
   status: 401;
   data: Flow[];
   meta: {
@@ -135,16 +135,16 @@ interface NoAuthenticatedSessionResponse {
   };
 }
 
-interface SessionInvalidOrNoLongerExists {
+export interface SessionInvalidOrNoLongerExists {
   status: 410;
 }
 
-interface TOTPAuthenticatorResponse {
+export interface TOTPAuthenticatorResponse {
   status: number;
   data: TOTPAuthenticator;
 }
 
-interface NoTOTPAuthenticatorResponse {
+export interface NoTOTPAuthenticatorResponse {
   status: 404;
   data: {
     meta: {
@@ -153,7 +153,7 @@ interface NoTOTPAuthenticatorResponse {
   };
 }
 
-interface EmailVerificationInfoResponse {
+export interface EmailVerificationInfoResponse {
   status: number;
   data: {
     email: string;
@@ -164,42 +164,42 @@ interface EmailVerificationInfoResponse {
   };
 }
 
-interface PasswordResetInfoResponse {
+export interface PasswordResetInfoResponse {
   status: number;
   data: {
     user: User;
   };
 }
 
-interface EmailAddress {
+export interface EmailAddress {
   email: string;
   primary: boolean;
   verified: boolean;
 }
 
-interface EmailAddressesResponse {
+export interface EmailAddressesResponse {
   status: number;
   data: EmailAddress[];
 }
 
-interface ProviderAccount {
+export interface ProviderAccount {
   uid: string;
   display: string;
   provider: Provider;
 }
 
-interface ProviderAccountsResponse {
+export interface ProviderAccountsResponse {
   status: number;
   data: ProviderAccount[];
 }
 
-interface TOTPAuthenticator {
+export interface TOTPAuthenticator {
   type: "totp";
   last_used_at: number | null;
   created_at: number;
 }
 
-interface RecoveryCodesAuthenticator {
+export interface RecoveryCodesAuthenticator {
   type: "recovery_codes";
   last_used_at: number | null;
   created_at: number;
@@ -207,22 +207,22 @@ interface RecoveryCodesAuthenticator {
   unused_code_count: number;
 }
 
-interface AuthenticatorsResponse {
+export interface AuthenticatorsResponse {
   status: number;
   data: (TOTPAuthenticator | RecoveryCodesAuthenticator)[];
 }
 
-interface SensitiveRecoveryCodesAuthenticator
+export interface SensitiveRecoveryCodesAuthenticator
   extends RecoveryCodesAuthenticator {
   unused_codes: string[];
 }
 
-interface SensitiveRecoveryCodesAuthenticatorResponse {
+export interface SensitiveRecoveryCodesAuthenticatorResponse {
   status: number;
   data: SensitiveRecoveryCodesAuthenticator;
 }
 
-interface Session {
+export interface Session {
   user_agent: string;
   ip: string;
   created_at: number;
@@ -231,9 +231,27 @@ interface Session {
   last_seen_at?: number;
 }
 
-interface SessionsResponse {
+export interface SessionsResponse {
   status: number;
   data: Session[];
+}
+
+function getCookie (name) {
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';')
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim()
+      // Does this cookie string begin with the name we want?
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        return decodeURIComponent(cookie.substring(name.length + 1))
+      }
+    }
+  }
+}
+
+
+export function getCSRFToken () {
+  return getCookie('csrftoken')
 }
 
 export class AllauthClient {
@@ -251,6 +269,15 @@ export class AllauthClient {
       body?: any;
     }
   ): Promise<T> {
+    if (this.client === "browser") {
+      options = {
+        ...options,
+        headers: {
+          "X-CSRFToken": getCSRFToken() || 'no-csrf-token',
+          ...options?.headers,
+        },
+      };
+    }
     const response = await fetch(`${this.apiBaseUrl}${url}`, {
       ...options,
       headers: {
