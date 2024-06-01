@@ -1,6 +1,5 @@
 {
   "name": "allauth-fetch",
-  "version": "0.2.1",
   "main": "index.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
