@@ -236,22 +236,21 @@ export interface SessionsResponse {
   data: Session[];
 }
 
-function getCookie (name) {
-  if (document.cookie && document.cookie !== '') {
-    const cookies = document.cookie.split(';')
+function getCookie(name): string | undefined {
+  if (document.cookie && document.cookie !== "") {
+    const cookies = document.cookie.split(";");
     for (let i = 0; i < cookies.length; i++) {
-      const cookie = cookies[i].trim()
+      const cookie = cookies[i].trim();
       // Does this cookie string begin with the name we want?
-      if (cookie.substring(0, name.length + 1) === (name + '=')) {
-        return decodeURIComponent(cookie.substring(name.length + 1))
+      if (cookie.substring(0, name.length + 1) === name + "=") {
+        return decodeURIComponent(cookie.substring(name.length + 1));
       }
     }
   }
 }
 
-
-export function getCSRFToken () {
-  return getCookie('csrftoken')
+export function getCSRFToken(): string | undefined {
+  return getCookie("csrftoken");
 }
 
 export class AllauthClient {
@@ -273,7 +272,7 @@ export class AllauthClient {
       options = {
         ...options,
         headers: {
-          "X-CSRFToken": getCSRFToken() || 'no-csrf-token',
+          "X-CSRFToken": getCSRFToken() || "no-csrf-token",
           ...options?.headers,
         },
       };
