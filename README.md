@@ -108,16 +108,16 @@ await allauthClient.changePassword(
 
 ### Social Account Management
 
-#### Get Provider Accounts
+#### List Provider Accounts
 
 ```typescript
-const providerAccounts = await allauthClient.getProviderAccounts(sessionToken);
+const response = await allauthClient.listProviderAccounts(sessionToken);
 ```
 
 #### Disconnect Provider Account
 
 ```typescript
-const providerAccounts = await allauthClient.disconnectProviderAccount(
+const response = await allauthClient.disconnectProviderAccount(
   { provider: "google", account: "john@example.com" },
   sessionToken
 );
@@ -125,16 +125,16 @@ const providerAccounts = await allauthClient.disconnectProviderAccount(
 
 ### Email Address Management
 
-#### Get Email Addresses
+#### List Email Addresses
 
 ```typescript
-const emailAddresses = await allauthClient.getEmailAddresses(sessionToken);
+const response = await allauthClient.listEmailAddresses(sessionToken);
 ```
 
 #### Add Email Address
 
 ```typescript
-const emailAddresses = await allauthClient.addEmailAddress(
+const response = await allauthClient.addEmailAddress(
   { email: "john@example.com" },
   sessionToken
 );
@@ -143,7 +143,7 @@ const emailAddresses = await allauthClient.addEmailAddress(
 #### Change Primary Email Address
 
 ```typescript
-const emailAddresses = await allauthClient.changePrimaryEmailAddress(
+const response = await allauthClient.changePrimaryEmailAddress(
   { email: "john@example.com", primary: true },
   sessionToken
 );
@@ -152,7 +152,7 @@ const emailAddresses = await allauthClient.changePrimaryEmailAddress(
 #### Remove Email Address
 
 ```typescript
-const emailAddresses = await allauthClient.removeEmailAddress(
+const response = await allauthClient.removeEmailAddress(
   { email: "john@example.com" },
   sessionToken
 );
@@ -160,16 +160,16 @@ const emailAddresses = await allauthClient.removeEmailAddress(
 
 ### Multi-Factor Authentication (MFA)
 
-#### Get Authenticators
+#### List Authenticators
 
 ```typescript
-const authenticators = await allauthClient.getAuthenticators(sessionToken);
+const response = await allauthClient.listAuthenticators(sessionToken);
 ```
 
 #### Get TOTP Authenticator
 
 ```typescript
-const totpAuthenticator = await allauthClient.getTOTPAuthenticator(
+const response = await allauthClient.getTOTPAuthenticator(
   sessionToken
 );
 ```
@@ -177,7 +177,7 @@ const totpAuthenticator = await allauthClient.getTOTPAuthenticator(
 #### Activate TOTP
 
 ```typescript
-const totpAuthenticator = await allauthClient.activateTOTP(
+const response = await allauthClient.activateTOTP(
   { code: "123456" },
   sessionToken
 );
@@ -189,10 +189,10 @@ const totpAuthenticator = await allauthClient.activateTOTP(
 await allauthClient.deactivateTOTP(sessionToken);
 ```
 
-#### Get Recovery Codes
+#### List Recovery Codes
 
 ```typescript
-const recoveryCodes = await allauthClient.getRecoveryCodes(sessionToken);
+const response = await allauthClient.listRecoveryCodes(sessionToken);
 ```
 
 #### Regenerate Recovery Codes
@@ -203,16 +203,16 @@ await allauthClient.regenerateRecoveryCodes(sessionToken);
 
 ### Session Management
 
-#### Get Sessions
+#### List Sessions
 
 ```typescript
-const sessions = await allauthClient.getSessions();
+const response = await allauthClient.listSessions();
 ```
 
 #### Delete Session
 
 ```typescript
-const sessions = await allauthClient.deleteSession();
+const response = await allauthClient.deleteSession();
 ```
 
 ## Configuration
