@@ -109,6 +109,52 @@ interface ErrorResponse {
   }[];
 }
 
+interface NotAuthenticatedResponse {
+  status: number;
+  data: {
+    flows: Flow[];
+  };
+  meta: {
+    is_authenticated: false;
+    session_token?: string;
+    access_token?: string;
+  };
+}
+
+interface ForbiddenResponse {
+  status: 403;
+}
+
+interface NoAuthenticatedSessionResponse {
+  status: 401;
+  data: Flow[];
+  meta: {
+    session_token?: string;
+    access_token?: string;
+    is_authenticated: false;
+  };
+}
+
+interface SessionInvalidOrNoLongerExists {
+  status: 410;
+}
+
+interface TOTPAuthenticatorResponse {
+  status: number;
+  data: TOTPAuthenticator;
+
+}
+
+interface NoTOTPAuthenticatorResponse {
+  status: 404;
+  data: {
+    meta: {
+      secret: string;
+    }
+  }
+}
+
+
 interface EmailVerificationInfoResponse {
   status: number;
   data: {
@@ -133,10 +179,20 @@ interface EmailAddress {
   verified: boolean;
 }
 
+interface EmailAddressesResponse {
+  status: number;
+  data: EmailAddress[];
+}
+
 interface ProviderAccount {
   uid: string;
   display: string;
   provider: Provider;
+}
+
+interface ProviderAccountsResponse {
+  status: number;
+  data: ProviderAccount[];
 }
 
 interface TOTPAuthenticator {
@@ -153,9 +209,19 @@ interface RecoveryCodesAuthenticator {
   unused_code_count: number;
 }
 
+interface AuthenticatorsResponse {
+  status: number;
+  data: (TOTPAuthenticator | RecoveryCodesAuthenticator)[];
+}
+
 interface SensitiveRecoveryCodesAuthenticator
   extends RecoveryCodesAuthenticator {
   unused_codes: string[];
+}
+
+interface SensitiveRecoveryCodesAuthenticatorResponse {
+  status: number;
+  data: SensitiveRecoveryCodesAuthenticator;
 }
 
 interface Session {
@@ -165,6 +231,11 @@ interface Session {
   is_current: boolean;
   id: number;
   last_seen_at?: number;
+}
+
+interface SessionsResponse {
+  status: number;
+  data: Session[];
 }
 
 export class AllauthClient {
@@ -203,50 +274,87 @@ export class AllauthClient {
     return this.fetchData<ConfigurationResponse>("/config");
   }
 
-  async login(data: {
-    username?: string;
-    email?: string;
-    password: string;
-  }): Promise<AuthenticatedResponse> {
-    return this.fetchData<AuthenticatedResponse>("/auth/login", {
+  async login(
+    data: {
+      username?: string;
+      email?: string;
+      password: string;
+    },
+    sessionToken?: string
+  ): Promise<AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse> {
+    const headers = {};
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<
+      AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse
+    >("/auth/login", {
       method: "POST",
       body: data,
+      headers,
     });
   }
 
-  async signup(data: {
-    email?: string;
-    username?: string;
-    password: string;
-  }): Promise<AuthenticatedResponse> {
-    return this.fetchData<AuthenticatedResponse>("/auth/signup", {
+  async signup(
+    data: {
+      email?: string;
+      username?: string;
+      password: string;
+    },
+    sessionToken?: string
+  ): Promise<
+    | AuthenticatedResponse
+    | ErrorResponse
+    | NotAuthenticatedResponse
+    | ForbiddenResponse
+  > {
+    const headers = {};
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<
+      | AuthenticatedResponse
+      | ErrorResponse
+      | NotAuthenticatedResponse
+      | ForbiddenResponse
+    >("/auth/signup", {
       method: "POST",
       body: data,
+      headers,
     });
   }
 
   async getEmailVerificationInfo(
-    key: string
-  ): Promise<EmailVerificationInfoResponse> {
-    return this.fetchData<EmailVerificationInfoResponse>("/auth/email/verify", {
-      headers: { "X-Email-Verification-Key": key },
-    });
+    key: string,
+    sessionToken?: string
+  ): Promise<EmailVerificationInfoResponse | ErrorResponse> {
+    const headers = { "X-Email-Verification-Key": key };
+    if (this.client === "app") {
+      headers["X-Session-Token"] = sessionToken!;
+    }
+    return this.fetchData<EmailVerificationInfoResponse | ErrorResponse>(
+      "/auth/email/verify",
+      {
+        headers,
+      }
+    );
   }
 
   async verifyEmail(
     data: { key: string },
     sessionToken?: string
-  ): Promise<AuthenticatedResponse> {
+  ): Promise<
+    AuthenticatedResponse | ErrorResponse | NoAuthenticatedSessionResponse
+  > {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<AuthenticatedResponse>("/auth/email/verify", {
+    return this.fetchData<
+      AuthenticatedResponse | ErrorResponse | NoAuthenticatedSessionResponse
+    >("/auth/email/verify", {
       method: "POST",
       headers,
       body: data,
@@ -256,44 +364,103 @@ export class AllauthClient {
   async reauthenticate(
     data: { password: string },
     sessionToken?: string
-  ): Promise<AuthenticatedResponse> {
+  ): Promise<AuthenticatedResponse | ErrorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<AuthenticatedResponse>("/auth/reauthenticate", {
-      method: "POST",
-      headers,
-      body: data,
-    });
+    return this.fetchData<AuthenticatedResponse | ErrorResponse>(
+      "/auth/reauthenticate",
+      {
+        method: "POST",
+        headers,
+        body: data,
+      }
+    );
   }
 
-  async requestPassword(data: { email: string }): Promise<void> {
-    await this.fetchData<void>("/auth/password/request", {
-      method: "POST",
-      body: data,
-    });
+  async requestPassword(
+    data: {
+      email: string;
+    },
+    sessionToken?: string
+  ): Promise<{ status: 200 } | ErrorResponse> {
+    const headers: Record<string, string> = {};
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<{ status: 200 } | ErrorResponse>(
+      "/auth/password/request",
+      {
+        method: "POST",
+        body: data,
+        headers,
+      }
+    );
   }
 
-  async getPasswordResetInfo(key: string): Promise<PasswordResetInfoResponse> {
-    return this.fetchData<PasswordResetInfoResponse>("/auth/password/reset", {
-      headers: { "X-Password-Reset-Key": key },
-    });
+  async getPasswordResetInfo(
+    key: string,
+    sessionToken?: string
+  ): Promise<PasswordResetInfoResponse | ErrorResponse> {
+    const headers: Record<string, string> = {
+      "X-Password-Reset-Key": key,
+    };
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<PasswordResetInfoResponse | ErrorResponse>(
+      "/auth/password/reset",
+      { headers }
+    );
   }
 
   async resetPassword(data: {
     key: string;
     password: string;
-  }): Promise<AuthenticatedResponse> {
-    return this.fetchData<AuthenticatedResponse>("/auth/password/reset", {
-      method: "POST",
-      body: data,
-    });
+    sessionToken?: string;
+  }): Promise<{ status: 200 } | ErrorResponse> {
+    const headers: Record<string, string> = {};
+    if (this.client === "app" && data.sessionToken) {
+      headers["X-Session-Token"] = data.sessionToken;
+    }
+    return this.fetchData<{ status: 200 } | ErrorResponse>(
+      "/auth/password/reset",
+      {
+        method: "POST",
+        body: data,
+        headers,
+      }
+    );
+  }
+
+  async providerRedirect(
+    provider: string,
+    callbackUrl: string,
+    process: "login" | "connect"
+  ): Promise<string> {
+    const formData = new URLSearchParams();
+    formData.append("provider", provider);
+    formData.append("callback_url", callbackUrl);
+    formData.append("process", process);
+    const response = await fetch(
+      `${this.apiBaseUrl}/_allauth/${this.client}/v1/auth/provider/redirect`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+    if (!response.ok) {
+      const errorData: ErrorResponse = await response.json();
+      throw new Error(errorData.errors[0]?.message || "Something went wrong");
+    }
+    const location = response.headers["location"];
+    if (!location) {
+      throw new Error("Location header is missing");
+    }
+    return location;
   }
 
   async providerToken(
@@ -303,46 +470,70 @@ export class AllauthClient {
       token: { client_id: string; id_token?: string; access_token?: string };
     },
     sessionToken?: string
-  ): Promise<AuthenticatedResponse> {
+  ): Promise<
+    | AuthenticatedResponse
+    | NotAuthenticatedResponse
+    | ErrorResponse
+    | ForbiddenResponse
+  > {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<AuthenticatedResponse>("/auth/provider/token", {
+    return this.fetchData<
+      | AuthenticatedResponse
+      | NotAuthenticatedResponse
+      | ErrorResponse
+      | ForbiddenResponse
+    >("/auth/provider/token", {
       method: "POST",
       headers,
       body: data,
     });
   }
 
-  async providerSignup(data: {
-    email: string;
-  }): Promise<AuthenticatedResponse> {
-    return this.fetchData<AuthenticatedResponse>("/auth/provider/signup", {
+  async providerSignup(
+    data: {
+      email: string;
+    },
+    sessionToken?: string
+  ): Promise<
+    | AuthenticatedResponse
+    | NotAuthenticatedResponse
+    | ErrorResponse
+    | ForbiddenResponse
+    | { status: 409 }
+  > {
+    const headers: Record<string, string> = {};
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<
+      | AuthenticatedResponse
+      | NotAuthenticatedResponse
+      | ErrorResponse
+      | ForbiddenResponse
+      | { status: 409 }
+    >("/auth/provider/signup", {
       method: "POST",
       body: data,
+      headers,
     });
   }
 
   async mfaAuthenticate(
     data: { code: string },
     sessionToken?: string
-  ): Promise<AuthenticatedResponse> {
+  ): Promise<AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<AuthenticatedResponse>("/auth/2fa/authenticate", {
+    return this.fetchData<AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse>("/auth/2fa/authenticate", {
       method: "POST",
       headers,
       body: data,
@@ -351,49 +542,54 @@ export class AllauthClient {
 
   async mfaReauthenticate(
     sessionToken?: string
-  ): Promise<AuthenticatedResponse> {
+  ): Promise<AuthenticatedResponse | ErrorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<AuthenticatedResponse>("/auth/2fa/reauthenticate", {
+    return this.fetchData<AuthenticatedResponse | ErrorResponse>("/auth/2fa/reauthenticate", {
       method: "POST",
       headers,
     });
   }
 
-  async requestLoginCode(data: { email: string }): Promise<void> {
-    await this.fetchData<void>("/auth/code/request", {
+  async requestLoginCode(data: { email: string }, sessionToken?: string): Promise<ErrorResponse | NotAuthenticatedResponse> {
+    const headers: Record<string, string> = {};
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<ErrorResponse | NotAuthenticatedResponse>("/auth/code/request", {
       method: "POST",
       body: data,
+      headers,
     });
   }
 
   async confirmLoginCode(data: {
     code: string;
-  }): Promise<AuthenticatedResponse> {
-    return this.fetchData<AuthenticatedResponse>("/auth/code/confirm", {
+    sessionToken?: string;
+  }): Promise<AuthenticatedResponse | NotAuthenticatedResponse | ErrorResponse> {
+    const headers: Record<string, string> = {};
+    if (this.client === "app" && data.sessionToken) {
+      headers["X-Session-Token"] = data.sessionToken;
+    }
+    return this.fetchData<AuthenticatedResponse | NotAuthenticatedResponse | ErrorResponse>("/auth/code/confirm", {
       method: "POST",
       body: data,
+      headers,
     });
   }
 
-  async getProviderAccounts(sessionToken?: string): Promise<ProviderAccount[]> {
+  async listProviderAccounts(sessionToken?: string): Promise<ProviderAccountsResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<ProviderAccount[]>("/account/providers", {
+    return this.fetchData<ProviderAccountsResponse>("/account/providers", {
       headers,
     });
   }
@@ -401,50 +597,41 @@ export class AllauthClient {
   async disconnectProviderAccount(
     data: { provider: string; account: string },
     sessionToken?: string
-  ): Promise<ProviderAccount[]> {
+  ): Promise<ProviderAccountsResponse | ErrorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<ProviderAccount[]>("/account/providers", {
+    return this.fetchData<ProviderAccountsResponse | ErrorResponse>("/account/providers", {
       method: "DELETE",
       headers,
       body: data,
     });
   }
 
-  async getEmailAddresses(sessionToken?: string): Promise<EmailAddress[]> {
+  async listEmailAddresses(sessionToken?: string): Promise<EmailAddressesResponse | NotAuthenticatedResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<EmailAddress[]>("/account/email", { headers });
+    return this.fetchData<EmailAddressesResponse | NotAuthenticatedResponse>("/account/email", { headers });
   }
 
   async addEmailAddress(
     data: { email: string },
     sessionToken?: string
-  ): Promise<EmailAddress[]> {
+  ): Promise<EmailAddressesResponse | ErrorResponse | NotAuthenticatedResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<EmailAddress[]>("/account/email", {
+    return this.fetchData<EmailAddressesResponse | ErrorResponse | NotAuthenticatedResponse>("/account/email", {
       method: "POST",
       headers,
       body: data,
@@ -454,17 +641,14 @@ export class AllauthClient {
   async requestEmailVerification(
     data: { email: string },
     sessionToken?: string
-  ): Promise<void> {
+  ): Promise<{status: 200 | 400 | 403}> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    await this.fetchData<void>("/account/email", {
+    return this.fetchData<{status: 200 | 400 | 403}>("/account/email", {
       method: "PUT",
       headers,
       body: data,
@@ -474,17 +658,14 @@ export class AllauthClient {
   async changePrimaryEmailAddress(
     data: { email: string; primary: true },
     sessionToken?: string
-  ): Promise<EmailAddress[]> {
+  ): Promise<EmailAddressesResponse | ErrorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<EmailAddress[]>("/account/email", {
+    return this.fetchData<EmailAddressesResponse | ErrorResponse>("/account/email", {
       method: "PATCH",
       headers,
       body: data,
@@ -494,36 +675,30 @@ export class AllauthClient {
   async removeEmailAddress(
     data: { email: string },
     sessionToken?: string
-  ): Promise<EmailAddress[]> {
+  ): Promise<EmailAddressesResponse | ErrorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<EmailAddress[]>("/account/email", {
+    return this.fetchData<EmailAddressesResponse | ErrorResponse>("/account/email", {
       method: "DELETE",
       headers,
       body: data,
     });
   }
 
-  async getAuthenticators(
+  async listAuthenticators(
     sessionToken?: string
-  ): Promise<(TOTPAuthenticator | RecoveryCodesAuthenticator)[]> {
+  ): Promise<(AuthenticatorsResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<(TOTPAuthenticator | RecoveryCodesAuthenticator)[]>(
+    return this.fetchData<AuthenticatorsResponse>(
       "/account/authenticators",
       { headers }
     );
@@ -531,17 +706,14 @@ export class AllauthClient {
 
   async getTOTPAuthenticator(
     sessionToken?: string
-  ): Promise<TOTPAuthenticator> {
+  ): Promise<TOTPAuthenticatorResponse | NoTOTPAuthenticatorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<TOTPAuthenticator>("/account/authenticators/totp", {
+    return this.fetchData<TOTPAuthenticatorResponse | NoTOTPAuthenticatorResponse>("/account/authenticators/totp", {
       headers,
     });
   }
@@ -549,68 +721,56 @@ export class AllauthClient {
   async activateTOTP(
     data: { code: string },
     sessionToken?: string
-  ): Promise<TOTPAuthenticator> {
+  ): Promise<TOTPAuthenticatorResponse | ErrorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<TOTPAuthenticator>("/account/authenticators/totp", {
+    return this.fetchData<TOTPAuthenticatorResponse | ErrorResponse>("/account/authenticators/totp", {
       method: "POST",
       headers,
       body: data,
     });
   }
 
-  async deactivateTOTP(sessionToken?: string): Promise<void> {
+  async deactivateTOTP(sessionToken?: string): Promise<{status: 200 | 401}> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    await this.fetchData<void>("/account/authenticators/totp", {
+    return this.fetchData<{status: 200 | 401}>("/account/authenticators/totp", {
       method: "DELETE",
       headers,
     });
   }
 
-  async getRecoveryCodes(
+  async listRecoveryCodes(
     sessionToken?: string
-  ): Promise<SensitiveRecoveryCodesAuthenticator> {
+  ): Promise<SensitiveRecoveryCodesAuthenticatorResponse | {status: 401 | 404}> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<SensitiveRecoveryCodesAuthenticator>(
+    return this.fetchData<SensitiveRecoveryCodesAuthenticatorResponse | {status: 401 | 404}>(
       "/account/authenticators/recovery_codes",
       { headers }
     );
   }
 
-  async regenerateRecoveryCodes(sessionToken?: string): Promise<void> {
+  async regenerateRecoveryCodes(sessionToken?: string): Promise<ErrorResponse | {status: 401}> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    await this.fetchData<void>("/account/authenticators/recovery_codes", {
+    return this.fetchData<ErrorResponse | {status: 401}>("/account/authenticators/recovery_codes", {
       method: "POST",
       headers,
     });
@@ -618,18 +778,23 @@ export class AllauthClient {
 
   async getAuthenticationStatus(
     sessionToken?: string
-  ): Promise<AuthenticatedResponse | AuthenticationResponse> {
+  ): Promise<
+    | AuthenticatedResponse
+    | NotAuthenticatedResponse
+    | SessionInvalidOrNoLongerExists
+  > {
     const headers: Record<string, string> = {};
     if (sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
-    return this.fetchData<AuthenticatedResponse | AuthenticationResponse>(
-      "/auth/session",
-      { headers }
-    );
+    return this.fetchData<
+      | AuthenticatedResponse
+      | NotAuthenticatedResponse
+      | SessionInvalidOrNoLongerExists
+    >("/auth/session", { headers });
   }
 
-  async logout(sessionToken?: string): Promise<AuthenticationResponse> {
+  async logout(sessionToken?: string): Promise<NoAuthenticatedSessionResponse> {
     const headers: Record<string, string> = {};
 
     if (this.client === "app") {
@@ -639,7 +804,7 @@ export class AllauthClient {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    return this.fetchData<AuthenticationResponse>("/auth/session", {
+    return this.fetchData<NoAuthenticatedSessionResponse>("/auth/session", {
       method: "DELETE",
       headers,
     });
@@ -648,28 +813,33 @@ export class AllauthClient {
   async changePassword(
     data: { current_password?: string; new_password: string },
     sessionToken?: string
-  ): Promise<void> {
+  ): Promise<NotAuthenticatedResponse | ErrorResponse> {
     const headers: Record<string, string> = {};
 
-    if (this.client === "app") {
-      if (!sessionToken) {
-        throw new Error("Session token is required for app client");
-      }
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
 
-    await this.fetchData<void>("/account/password/change", {
+    return this.fetchData<NotAuthenticatedResponse | ErrorResponse>("/account/password/change", {
       method: "POST",
       headers,
       body: data,
     });
   }
 
-  async getSessions(): Promise<Session[]> {
-    return this.fetchData<Session[]>("/sessions");
+  async listSessions(sessionToken?: string): Promise<SessionsResponse> {
+    const headers: Record<string, string> = {};
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<SessionsResponse>("/sessions", { headers });
   }
 
-  async deleteSession(): Promise<Session[]> {
-    return this.fetchData<Session[]>("/sessions", { method: "DELETE" });
+  async deleteSession(sessionToken?: string): Promise<SessionsResponse> {
+    const headers: Record<string, string> = {};
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+    return this.fetchData<SessionsResponse>("/sessions", { method: "DELETE" });
   }
 }
