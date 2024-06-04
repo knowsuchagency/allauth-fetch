@@ -298,7 +298,15 @@ export class AllauthClient {
 
     if (!response.ok) {
       const errorData: ErrorResponse = await response.json();
-      throw new Error(errorData.errors[0]?.message || "Something went wrong");
+      if (
+        errorData.errors &&
+        Array.isArray(errorData.errors) &&
+        errorData.errors.length > 0
+      ) {
+        throw new Error(errorData.errors[0]?.message || "Something went wrong");
+      } else {
+        throw new Error("Something went wrong");
+      }
     }
 
     return response.json();
