@@ -253,6 +253,10 @@ export function getCSRFToken(): string | undefined {
   return getCookie("csrftoken");
 }
 
+export function getSessionId(): string | undefined {
+  return getCookie("sessionid");
+}
+
 export class AllauthClient {
   private apiBaseUrl: string;
 
@@ -269,12 +273,18 @@ export class AllauthClient {
     }
   ): Promise<T> {
     if (this.client === "browser") {
+      const headers = {};
+      const csrfToken = getCSRFToken();
+      if (csrfToken) {
+        headers["X-CSRFToken"] = csrfToken;
+      }
+      const sessionId = getSessionId();
+      if (sessionId) {
+        headers["X-Session-Token"] = sessionId;
+      }
       options = {
         ...options,
-        headers: {
-          "X-CSRFToken": getCSRFToken() || "no-csrf-token",
-          ...options?.headers,
-        },
+        headers: headers,
       };
     }
     const response = await fetch(`${this.apiBaseUrl}${url}`, {
@@ -353,7 +363,7 @@ export class AllauthClient {
     sessionToken?: string
   ): Promise<EmailVerificationInfoResponse | ErrorResponse> {
     const headers = { "X-Email-Verification-Key": key };
-    if (this.client === "app") {
+    if (this.client === "app" && sessionToken) {
       headers["X-Session-Token"] = sessionToken!;
     }
     return this.fetchData<EmailVerificationInfoResponse | ErrorResponse>(
@@ -444,11 +454,11 @@ export class AllauthClient {
   async resetPassword(data: {
     key: string;
     password: string;
-    sessionToken?: string;
-  }): Promise<{ status: 200 } | ErrorResponse> {
+    
+  }, sessionToken?: string): Promise<{ status: 200 } | ErrorResponse> {
     const headers: Record<string, string> = {};
-    if (this.client === "app" && data.sessionToken) {
-      headers["X-Session-Token"] = data.sessionToken;
+    if (this.client === "app" && sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
     }
     return this.fetchData<{ status: 200 } | ErrorResponse>(
       "/auth/password/reset",
