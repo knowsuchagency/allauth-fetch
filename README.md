@@ -26,7 +26,28 @@ Create an instance of the `AllauthClient` by providing the client type (`'app'` 
 
 ```typescript
 const allauthClient = new AllauthClient("browser", "https://api.example.com");
+``` 
+
+### Session tokens for app clients
+
+The client automatically handles session tokens for browser clients. 
+
+`app` clients require an additional `storage` parameter to handle sessions.
+
+```ts
+interface AsyncStorage {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string | null): Promise<void>;
+}
 ```
+
+```ts
+// with a storage parameter conforming to the AsyncStorage schema, the client will handle session tokens for you
+const allauthClient = new AllauthClient("browser", "https://api.example.com", storage);
+```
+
+More information on how headless Allauth handles session tokens can be found [here](https://docs.allauth.org/en/latest/headless/openapi-specification/#section/App-Usage/Session-Tokens).
+
 
 ### Authentication Methods
 
