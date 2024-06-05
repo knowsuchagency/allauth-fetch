@@ -257,10 +257,34 @@ export function getSessionId(): string | undefined {
   return getCookie("sessionid");
 }
 
+interface AsyncStorage {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string | null): Promise<void>;
+}
+
+/**
+ * `AllauthClient` is a class that provides methods to interact with the Allauth API.
+ * It supports both browser and app clients.
+ * 
+ * For app clients, it uses an optional `AsyncStorage` instance to manage session tokens.
+ * Session tokens are used to maintain the session state in the absence of cookies.
+ * 
+ * The session token is sent in the `X-Session-Token` header of each request after it's obtained.
+ * 
+ * Session tokens can be found in the `meta.session_token` field of authentication related responses.
+ * When a new session token is received, it should overwrite the previous one and be used in all subsequent requests.
+ * 
+ * If a response with status code 410 (Gone) is received, it indicates that the session is no longer valid.
+ * In this case, the session token should be removed and a new session should be started.
+ * 
+ * @param {Client} client - The client type, either "browser" or "app".
+ * @param {string} apiBaseUrl - The base URL of the Allauth API.
+ * @param {AsyncStorage | null} storage - An optional instance of AsyncStorage for managing session tokens in app clients.
+ */
 export class AllauthClient {
   private apiBaseUrl: string;
 
-  constructor(private client: Client, apiBaseUrl: string) {
+  constructor(private client: Client, apiBaseUrl: string, private storage?: AsyncStorage | null) {
     this.apiBaseUrl = `${apiBaseUrl}/_allauth/${client}/v1`;
   }
 
@@ -287,6 +311,20 @@ export class AllauthClient {
         headers: headers,
       };
     }
+
+    if (this.client === "app" && this.storage) {
+      const sessionToken = await this.storage.get("sessionToken");
+      if (sessionToken) {
+        options = {
+          ...options,
+          headers: {
+            ...options?.headers,
+            "X-Session-Token": sessionToken,
+          },
+        };
+      }
+    }
+
     const response = await fetch(`${this.apiBaseUrl}${url}`, {
       ...options,
       headers: {
@@ -297,6 +335,10 @@ export class AllauthClient {
     });
 
     if (!response.ok) {
+      if (response.status === 410 && this.client === "app" && this.storage) {
+        await this.storage.set("sessionToken", null);
+      }
+
       const errorData: ErrorResponse = await response.json();
       if (
         errorData.errors &&
@@ -309,7 +351,16 @@ export class AllauthClient {
       }
     }
 
-    return response.json();
+    const responseJson = await response.json() as any;
+
+    if (this.client === "app" && this.storage) {
+      if (responseJson.meta?.session_token) {
+        await this.storage.set("sessionToken", responseJson.meta.session_token);
+      }
+    }
+
+    return responseJson;
+
   }
 
   async getConfiguration(): Promise<ConfigurationResponse> {
