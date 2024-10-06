@@ -1,5 +1,5 @@
 {
   "name": "@knowsuchagency/allauth-fetch",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "exports": "./index.ts"
 }

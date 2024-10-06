@@ -1,6 +1,6 @@
 # Django Allauth Client
 
-This project provides a fetch-based client library and higher-level react context for the excellent [Django Allauth](https://allauth.org/) library.
+This project provides a fetch-based client for [Django Allauth](https://allauth.org/).
 
 The `AllauthClient` module provides a client-side library for interacting with the authentication and account management endpoints of the [django-allauth openapi spec](https://docs.allauth.org/en/latest/headless/openapi-specification/). It supports both browser-based and app-based authentication flows.
 
