@@ -746,9 +746,15 @@ export class AllauthClient {
       }
     }
 
-    return this.fetchData<NoAuthenticatedSessionResponse>("/auth/session", {
+    const response = await this.fetchData<NoAuthenticatedSessionResponse>("/auth/session", {
       method: "DELETE",
     });
+
+    if (this.client === "app") {
+      await this.storage.setSessionToken(null);
+    }
+
+    return response;
   }
 
   async changePassword(
