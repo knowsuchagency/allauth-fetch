@@ -32,18 +32,36 @@ const allauthClient = new AllauthClient("browser", "https://api.example.com");
 
 The client automatically handles session tokens for browser clients. 
 
-`app` clients require an additional `storage` parameter to handle sessions.
+For `app` clients, you can provide an optional `storage` parameter to handle sessions. If not provided, the client will use a default implementation that uses cookies (which may not be suitable for all app environments).
 
-```ts
-interface AsyncStorage {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string | null): Promise<void>;
+The `storage` parameter should conform to the following interface:
+
+```typescript
+interface SessionStorage {
+  getSessionToken(): Promise<string | null>;
+  setSessionToken(value: string | null): Promise<void>;
 }
 ```
 
-```ts
-// with a storage parameter conforming to the AsyncStorage schema, the client will handle session tokens for you
-const allauthClient = new AllauthClient("browser", "https://api.example.com", storage);
+Here's an example of how to create an AllauthClient instance with custom storage:
+
+```typescript
+const customStorage: SessionStorage = {
+  async getSessionToken() {
+    // Implement your custom logic to retrieve the session token
+  },
+  async setSessionToken(value: string | null) {
+    // Implement your custom logic to store or remove the session token
+  }
+};
+
+const allauthClient = new AllauthClient("app", "https://api.example.com", customStorage);
+```
+
+If you don't provide a custom storage, the client will use a default implementation that uses cookies:
+
+```typescript
+const allauthClient = new AllauthClient("app", "https://api.example.com");
 ```
 
 More information on how headless Allauth handles session tokens can be found [here](https://docs.allauth.org/en/latest/headless/openapi-specification/#section/App-Usage/Session-Tokens).
