@@ -269,7 +269,7 @@ class CookieSessionStorage implements SessionStorage {
 
   async setSessionToken(value: string | null): Promise<void> {
     if (value) {
-      document.cookie = `sessiontoken=${value}; path=/; secure; samesite=strict`;
+      document.cookie = `sessiontoken=${value}; path=/; secure; samesite=lax`;
     } else {
       document.cookie = "sessiontoken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     }
