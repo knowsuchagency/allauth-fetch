@@ -336,6 +336,7 @@ export class AllauthClient {
     const response = await fetch(`${this.apiBaseUrl}${url}`, {
       ...options,
       headers,
+      credentials: 'include',
       body: options?.body ? JSON.stringify(options.body) : undefined,
     });
 
