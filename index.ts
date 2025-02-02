@@ -324,10 +324,7 @@ export class AllauthClient {
     if (this.client === "browser") {
       const csrfToken = getCSRFToken();
       if (csrfToken) {
-        console.log("csrf token detected. adding to headers");
         headers["X-CSRFToken"] = csrfToken;
-      } else {
-        console.log("no csrf token detected");
       }
     }
 
@@ -335,8 +332,6 @@ export class AllauthClient {
     if (sessionToken) {
       headers["X-Session-Token"] = sessionToken;
     }
-
-    console.log("headers", headers);
 
     const response = await fetch(`${this.apiBaseUrl}${url}`, {
       ...options,
