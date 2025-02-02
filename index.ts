@@ -337,6 +337,7 @@ export class AllauthClient {
       ...options,
       headers,
       credentials: 'include',
+      mode: 'cors',
       body: options?.body ? JSON.stringify(options.body) : undefined,
     });
 
