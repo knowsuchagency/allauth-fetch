@@ -25,14 +25,14 @@ import { AllauthClient } from "@knowsuchagency/allauth-fetch";
 Create an instance of the `AllauthClient` by providing the client type (`'app'` or `'browser'`) and the base URL of the API:
 
 ```typescript
-const allauthClient = new AllauthClient("browser", "https://api.example.com");
+const allauthClient = new AllauthClient("app", "https://api.example.com");
 ``` 
 
 ### Session tokens for app clients
 
-The client automatically handles session tokens for browser clients. 
+The client automatically handles session tokens for browser and app clients using cookies.
 
-For `app` clients, you can provide an optional `storage` parameter to handle sessions. If not provided, the client will use a default implementation that uses cookies (which may not be suitable for all app environments).
+For `app` clients, you can provide an optional `storage` parameter to handle sessions. If not provided, the client will use a default cookie implementation which may not be suitable for all app environments.
 
 The `storage` parameter should conform to the following interface:
 
