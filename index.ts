@@ -740,39 +740,43 @@ export class AllauthClient {
       }
     }
 
-    try {
-      const response = await this.fetchData<NoAuthenticatedSessionResponse>(
-        "/auth/session",
-        {
-          method: "DELETE",
-        }
-      );
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
 
-      if (this.client === "app") {
-        await this.storage.setSessionToken(null);
+    if (this.client === "browser") {
+      const csrfToken = getCSRFToken();
+      if (csrfToken) {
+        headers["X-CSRFToken"] = csrfToken;
       }
-
-      return response;
-    } catch (error) {
-      // For logout, a 401 response is expected and should not be treated as an error
-      if (error instanceof Error && error.message.includes("401")) {
-        // Create a proper NoAuthenticatedSessionResponse
-        const response: NoAuthenticatedSessionResponse = {
-          status: 401,
-          data: [],
-          meta: {
-            is_authenticated: false,
-          },
-        };
-
-        if (this.client === "app") {
-          await this.storage.setSessionToken(null);
-        }
-
-        return response;
-      }
-      throw error;
     }
+
+    // Get session token for the request headers
+    const token = await this.storage.getSessionToken();
+    if (token) {
+      headers["X-Session-Token"] = token;
+    }
+
+    const response = await fetch(`${this.apiBaseUrl}/auth/session`, {
+      method: "DELETE",
+      headers,
+      credentials: "include",
+      mode: "cors",
+    });
+
+    // For logout, 401 is an expected response
+    if (!response.ok && response.status !== 401) {
+      throw new Error("Logout failed");
+    }
+
+    const responseJson =
+      (await response.json()) as NoAuthenticatedSessionResponse;
+
+    if (this.client === "app") {
+      await this.storage.setSessionToken(null);
+    }
+
+    return responseJson;
   }
 
   async changePassword(data: {
