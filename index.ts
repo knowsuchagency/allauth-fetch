@@ -263,16 +263,46 @@ interface SessionStorage {
 }
 
 class CookieSessionStorage implements SessionStorage {
+  private useSecure: boolean;
+
+  constructor(options: { apiUrl?: string } = {}) {
+    // Determine secure flag from API URL scheme or fallback to current window location
+    this.useSecure = options.apiUrl
+      ? options.apiUrl.startsWith("https:")
+      : window.location.protocol === "https:";
+  }
+
   async getSessionToken(): Promise<string | null> {
     return getCookie("sessiontoken") || null;
   }
 
   async setSessionToken(value: string | null): Promise<void> {
-    if (value) {
-      document.cookie = `sessiontoken=${value}; path=/; secure; samesite=lax`;
-    } else {
-      document.cookie =
-        "sessiontoken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    try {
+      if (value) {
+        // Encode the value to handle special characters
+        const encodedValue = encodeURIComponent(value);
+        let cookieString = `sessiontoken=${encodedValue}; path=/; samesite=lax`;
+
+        // Only add secure flag if using HTTPS
+        if (this.useSecure) {
+          cookieString += "; secure";
+        }
+
+        document.cookie = cookieString;
+      } else {
+        // When clearing, maintain the same attributes
+        let cookieString =
+          "sessiontoken=; path=/; samesite=lax; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+
+        // Only add secure flag if using HTTPS
+        if (this.useSecure) {
+          cookieString += "; secure";
+        }
+
+        document.cookie = cookieString;
+      }
+    } catch (error) {
+      console.error("Failed to set session token cookie:", error);
     }
   }
 }
@@ -306,7 +336,7 @@ export class AllauthClient {
     storage?: SessionStorage
   ) {
     this.apiBaseUrl = `${apiBaseUrl}/_allauth/${client}/v1`;
-    this.storage = storage || new CookieSessionStorage();
+    this.storage = storage || new CookieSessionStorage({ apiUrl: apiBaseUrl });
   }
 
   private async fetchData<T>(
