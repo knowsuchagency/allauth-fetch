@@ -26,7 +26,22 @@ Create an instance of the `AllauthClient` by providing the client type (`'app'` 
 
 ```typescript
 const allauthClient = new AllauthClient("app", "https://api.example.com");
-``` 
+```
+
+### CSRF Token Support
+
+For browser clients, you can provide an optional `csrfTokenEndpoint` parameter to specify an endpoint for fetching CSRF tokens. This is useful when your Django backend requires CSRF protection for non-GET requests:
+
+```typescript
+const allauthClient = new AllauthClient(
+  "browser",
+  "https://api.example.com",
+  "/csrf-token/", // CSRF token endpoint
+  undefined // Using default storage
+);
+```
+
+If provided, the client will automatically fetch a CSRF token before making non-GET requests and include it in the `X-CSRFToken` header.
 
 ### Session tokens for app clients
 
@@ -52,10 +67,21 @@ const customStorage: SessionStorage = {
   },
   async setSessionToken(value: string | null) {
     // Implement your custom logic to store or remove the session token
-  }
+  },
+  async getCSRFToken() {
+    // Implement your custom logic to retrieve the CSRF token
+  },
+  async setCSRFToken(value: string | null) {
+    // Implement your custom logic to store or remove the CSRF token
+  },
 };
 
-const allauthClient = new AllauthClient("app", "https://api.example.com", customStorage);
+const allauthClient = new AllauthClient(
+  "app",
+  "https://api.example.com",
+  undefined, // No CSRF token endpoint needed
+  customStorage
+);
 ```
 
 If you don't provide a custom storage, the client will use a default implementation that uses cookies:
@@ -65,7 +91,6 @@ const allauthClient = new AllauthClient("app", "https://api.example.com");
 ```
 
 More information on how headless Allauth handles session tokens can be found [here](https://docs.allauth.org/en/latest/headless/openapi-specification/#section/App-Usage/Session-Tokens).
-
 
 ### Authentication Methods
 
@@ -208,9 +233,7 @@ const response = await allauthClient.listAuthenticators(sessionToken);
 #### Get TOTP Authenticator
 
 ```typescript
-const response = await allauthClient.getTOTPAuthenticator(
-  sessionToken
-);
+const response = await allauthClient.getTOTPAuthenticator(sessionToken);
 ```
 
 #### Activate TOTP
@@ -260,5 +283,26 @@ The `AllauthClient` constructor accepts the following parameters:
 
 - `client`: The client type, either `'app'` or `'browser'`.
 - `apiBaseUrl`: The base URL of the API.
+- `csrfTokenEndpoint`: (Optional) The endpoint to fetch CSRF tokens from. If provided, the client will automatically fetch a CSRF token before making non-GET requests.
+- `storage`: (Optional) A custom storage implementation for managing session tokens and CSRF tokens. If not provided, a default cookie-based implementation will be used.
 
 Make sure to provide the correct values based on your API setup.
+
+### CSRF Token Handling
+
+When using the `csrfTokenEndpoint` parameter:
+
+1. The client will check if a CSRF token is already available in storage before making a non-GET request.
+2. If no token is found, it will make a GET request to the specified endpoint to fetch a new token.
+3. The token will be stored using the provided storage implementation.
+4. The token will be included in the `X-CSRFToken` header for all subsequent non-GET requests.
+
+The endpoint should return a JSON response with a `token` field containing the CSRF token:
+
+```json
+{
+  "token": "your-csrf-token-value"
+}
+```
+
+If the token is set as a cookie by the server, the client will attempt to retrieve it from the cookie storage.

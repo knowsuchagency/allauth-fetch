@@ -260,16 +260,20 @@ export function getSessionId(): string | undefined {
 interface SessionStorage {
   getSessionToken(): Promise<string | null>;
   setSessionToken(value: string | null): Promise<void>;
+  getCSRFToken(): Promise<string | null>;
+  setCSRFToken(value: string | null): Promise<void>;
 }
 
 class CookieSessionStorage implements SessionStorage {
   private useSecure: boolean;
+  private csrfTokenCookieName: string;
 
-  constructor(options: { apiUrl?: string } = {}) {
+  constructor(options: { apiUrl?: string; csrfTokenCookieName?: string } = {}) {
     // Determine secure flag from API URL scheme or fallback to current window location
     this.useSecure = options.apiUrl
       ? options.apiUrl.startsWith("https:")
       : window.location.protocol === "https:";
+    this.csrfTokenCookieName = options.csrfTokenCookieName || "csrftoken";
   }
 
   async getSessionToken(): Promise<string | null> {
@@ -305,6 +309,43 @@ class CookieSessionStorage implements SessionStorage {
       console.error("Failed to set session token cookie:", error);
     }
   }
+
+  async getCSRFToken(): Promise<string | null> {
+    return getCookie(this.csrfTokenCookieName) || null;
+  }
+
+  async setCSRFToken(value: string | null): Promise<void> {
+    try {
+      if (value) {
+        // Encode the value to handle special characters
+        const encodedValue = encodeURIComponent(value);
+        let cookieString = `${this.csrfTokenCookieName}=${encodedValue}; path=/; samesite=lax`;
+
+        // Only add secure flag if using HTTPS
+        if (this.useSecure) {
+          cookieString += "; secure";
+        }
+
+        document.cookie = cookieString;
+      } else {
+        // When clearing, maintain the same attributes
+        let cookieString = `${this.csrfTokenCookieName}=; path=/; samesite=lax; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+
+        // Only add secure flag if using HTTPS
+        if (this.useSecure) {
+          cookieString += "; secure";
+        }
+
+        document.cookie = cookieString;
+      }
+    } catch (error) {
+      console.error(`Failed to set ${this.csrfTokenCookieName} cookie:`, error);
+    }
+  }
+}
+
+export interface CSRFTokenResponse {
+  token: string;
 }
 
 /**
@@ -325,18 +366,127 @@ class CookieSessionStorage implements SessionStorage {
  * @param {Client} client - The client type, either "browser" or "app".
  * @param {string} apiBaseUrl - The base URL of the Allauth API.
  * @param {AsyncStorage | null} storage - An optional instance of AsyncStorage for managing session tokens in app clients.
+ * @param {string} csrfTokenEndpoint - The endpoint to fetch CSRF tokens from. If provided, CSRF tokens will be fetched before each non-GET request.
  */
 export class AllauthClient {
   private apiBaseUrl: string;
   private storage: SessionStorage;
+  private csrfTokenEndpoint?: string;
 
   constructor(
     private client: Client,
     apiBaseUrl: string,
+    csrfTokenEndpoint?: string,
     storage?: SessionStorage
   ) {
     this.apiBaseUrl = `${apiBaseUrl}/_allauth/${client}/v1`;
     this.storage = storage || new CookieSessionStorage({ apiUrl: apiBaseUrl });
+    this.csrfTokenEndpoint = csrfTokenEndpoint;
+  }
+
+  private async fetchCSRFToken(): Promise<string | null> {
+    if (!this.csrfTokenEndpoint) {
+      return null;
+    }
+
+    try {
+      const response = await this.customFetch(
+        `${this.apiBaseUrl}${this.csrfTokenEndpoint}`,
+        {
+          method: "GET",
+          skipCSRFToken: true, // Skip to prevent infinite recursion
+        }
+      );
+
+      if (!response.ok) {
+        console.error("Failed to fetch CSRF token:", response.status);
+        return null;
+      }
+
+      // Check for CSRF token in response JSON
+      const data = (await response.json()) as CSRFTokenResponse;
+      if (data && data.token) {
+        await this.storage.setCSRFToken(data.token);
+        return data.token;
+      }
+
+      // If no token in body, it might be set as a cookie directly by the server
+      // Let the storage check if it was updated
+      const cookieToken = await this.storage.getCSRFToken();
+      return cookieToken;
+    } catch (error) {
+      console.error("Error fetching CSRF token:", error);
+      return null;
+    }
+  }
+
+  private async customFetch(
+    url: string,
+    options: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: any;
+      skipCSRFToken?: boolean;
+      isFormData?: boolean;
+    } = {}
+  ): Promise<Response> {
+    const headers: Record<string, string> = {
+      ...(options.isFormData ? {} : { "Content-Type": "application/json" }),
+      ...options.headers,
+    };
+
+    // Check if we already have a CSRF token in storage
+    let csrfToken: string | null = null;
+    if (this.csrfTokenEndpoint && !options.skipCSRFToken) {
+      csrfToken = await this.storage.getCSRFToken();
+    }
+
+    // Fetch CSRF token if endpoint is provided, no token exists, and on non-GET requests
+    if (
+      this.csrfTokenEndpoint &&
+      !options.skipCSRFToken &&
+      !csrfToken &&
+      options.method !== "GET" &&
+      options.method !== undefined
+    ) {
+      await this.fetchCSRFToken();
+      // Get the newly fetched token
+      csrfToken = await this.storage.getCSRFToken();
+    }
+
+    // Add CSRF token to headers if available
+    if (this.client === "browser" && !options.skipCSRFToken && csrfToken) {
+      headers["X-CSRFToken"] = csrfToken;
+    }
+
+    // Add session token if available
+    const sessionToken = await this.storage.getSessionToken();
+    if (sessionToken) {
+      headers["X-Session-Token"] = sessionToken;
+    }
+
+    // Prepare the body based on whether it's form data or JSON
+    let fetchBody: any = undefined;
+    if (options.body) {
+      fetchBody = options.isFormData
+        ? options.body
+        : JSON.stringify(options.body);
+    }
+
+    const response = await fetch(url, {
+      method: options.method || "GET",
+      headers,
+      credentials: "include",
+      mode: "cors",
+      body: fetchBody,
+    });
+
+    // Handle session invalidation
+    if (response.status === 410) {
+      await this.storage.setSessionToken(null);
+    }
+
+    return response;
   }
 
   private async fetchData<T>(
@@ -347,36 +497,12 @@ export class AllauthClient {
       body?: any;
     }
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    };
-
-    if (this.client === "browser") {
-      const csrfToken = getCSRFToken();
-      if (csrfToken) {
-        headers["X-CSRFToken"] = csrfToken;
-      }
-    }
-
-    const sessionToken = await this.storage.getSessionToken();
-    if (sessionToken) {
-      headers["X-Session-Token"] = sessionToken;
-    }
-
-    const response = await fetch(`${this.apiBaseUrl}${url}`, {
-      ...options,
-      headers,
-      credentials: "include",
-      mode: "cors",
-      body: options?.body ? JSON.stringify(options.body) : undefined,
-    });
+    const response = await this.customFetch(
+      `${this.apiBaseUrl}${url}`,
+      options
+    );
 
     if (!response.ok) {
-      if (response.status === 410) {
-        await this.storage.setSessionToken(null);
-      }
-
       const errorData: ErrorResponse = await response.json();
       if (
         errorData.errors &&
@@ -521,21 +647,26 @@ export class AllauthClient {
     formData.append("provider", provider);
     formData.append("callback_url", callbackUrl);
     formData.append("process", process);
-    const response = await fetch(
-      `${this.apiBaseUrl}/_allauth/${this.client}/v1/auth/provider/redirect`,
+
+    const response = await this.customFetch(
+      `${this.apiBaseUrl}/auth/provider/redirect`,
       {
         method: "POST",
         body: formData,
+        isFormData: true,
       }
     );
+
     if (!response.ok) {
       const errorData: ErrorResponse = await response.json();
       throw new Error(errorData.errors[0]?.message || "Something went wrong");
     }
-    const location = response.headers["location"];
+
+    const location = response.headers.get("location");
     if (!location) {
       throw new Error("Location header is missing");
     }
+
     return location;
   }
 
@@ -770,28 +901,8 @@ export class AllauthClient {
       }
     }
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.client === "browser") {
-      const csrfToken = getCSRFToken();
-      if (csrfToken) {
-        headers["X-CSRFToken"] = csrfToken;
-      }
-    }
-
-    // Get session token for the request headers
-    const token = await this.storage.getSessionToken();
-    if (token) {
-      headers["X-Session-Token"] = token;
-    }
-
-    const response = await fetch(`${this.apiBaseUrl}/auth/session`, {
+    const response = await this.customFetch(`${this.apiBaseUrl}/auth/session`, {
       method: "DELETE",
-      headers,
-      credentials: "include",
-      mode: "cors",
     });
 
     // For logout, 401 is an expected response
