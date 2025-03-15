@@ -257,14 +257,53 @@ export function getSessionId(): string | undefined {
   return getCookie("sessionid");
 }
 
-interface SessionStorage {
+interface StorageInterface {
   getSessionToken(): Promise<string | null>;
   setSessionToken(value: string | null): Promise<void>;
   getCSRFToken(): Promise<string | null>;
   setCSRFToken(value: string | null): Promise<void>;
 }
 
-class CookieSessionStorage implements SessionStorage {
+/**
+ * JWT storage implementation that stores tokens in localStorage
+ */
+export class JWTStorage implements StorageInterface {
+  private sessionTokenKey: string = "allauth_session_token";
+  private csrfTokenKey: string = "allauth_csrf_token";
+
+  constructor(
+    options: { sessionTokenKey?: string; csrfTokenKey?: string } = {}
+  ) {
+    if (options.sessionTokenKey) this.sessionTokenKey = options.sessionTokenKey;
+    if (options.csrfTokenKey) this.csrfTokenKey = options.csrfTokenKey;
+  }
+
+  async getSessionToken(): Promise<string | null> {
+    return localStorage.getItem(this.sessionTokenKey);
+  }
+
+  async setSessionToken(value: string | null): Promise<void> {
+    if (value) {
+      localStorage.setItem(this.sessionTokenKey, value);
+    } else {
+      localStorage.removeItem(this.sessionTokenKey);
+    }
+  }
+
+  async getCSRFToken(): Promise<string | null> {
+    return localStorage.getItem(this.csrfTokenKey);
+  }
+
+  async setCSRFToken(value: string | null): Promise<void> {
+    if (value) {
+      localStorage.setItem(this.csrfTokenKey, value);
+    } else {
+      localStorage.removeItem(this.csrfTokenKey);
+    }
+  }
+}
+
+class CookieSessionStorage implements StorageInterface {
   private useSecure: boolean;
   private csrfTokenCookieName: string;
 
@@ -366,22 +405,25 @@ export interface CSRFTokenResponse {
  * @param {string} apiBaseUrl - The base URL of the Allauth API.
  * @param {string} csrfTokenEndpoint - The endpoint to fetch CSRF tokens from. If provided, CSRF tokens will be fetched before each non-GET request.
  * @param {ClientType} clientType - The client type, either "browser" or "app". Defaults to "browser".
- * @param {SessionStorage} storage - An optional storage implementation for managing session tokens and CSRF tokens.
+ * @param {StorageInterface} storage - An optional storage implementation for managing session tokens and CSRF tokens.
  */
 export class AllauthClient {
   private apiBaseUrl: string;
-  private storage: SessionStorage;
+  private storage: StorageInterface;
   private csrfTokenUrl: string;
   private clientType: ClientType;
   constructor(
     apiBaseUrl: string,
     csrfTokenEndpoint?: string,
-    clientType: ClientType = "browser",
-    storage?: SessionStorage
+    clientType: ClientType = "app",
+    storage?: StorageInterface
   ) {
     this.apiBaseUrl = `${apiBaseUrl}/_allauth/${clientType}/v1`;
-    this.storage = storage || new CookieSessionStorage({ apiUrl: apiBaseUrl });
-    this.csrfTokenUrl = `${apiBaseUrl}${csrfTokenEndpoint}`;
+    this.storage = storage || new JWTStorage();
+    this.csrfTokenUrl = csrfTokenEndpoint
+      ? `${apiBaseUrl}${csrfTokenEndpoint}`
+      : "";
+    this.clientType = clientType;
   }
 
   async fetchCSRFToken(): Promise<string | null> {
@@ -392,9 +434,8 @@ export class AllauthClient {
     try {
       const response = await this.customFetch(this.csrfTokenUrl, {
         method: "GET",
-          skipCSRFToken: true, // Skip to prevent infinite recursion
-        }
-      );
+        skipCSRFToken: true, // Skip to prevent infinite recursion
+      });
 
       if (!response.ok) {
         console.error("Failed to fetch CSRF token:", response.status);
@@ -433,17 +474,12 @@ export class AllauthClient {
       ...options.headers,
     };
 
-    // Check if we already have a CSRF token in storage
     let csrfToken: string | null = null;
-    if (this.csrfTokenUrl && !options.skipCSRFToken) {
-      csrfToken = await this.storage.getCSRFToken();
-    }
 
     // Fetch CSRF token if endpoint is provided, no token exists, and on non-GET requests
     if (
       this.csrfTokenUrl &&
       !options.skipCSRFToken &&
-      !csrfToken &&
       options.method !== "GET" &&
       options.method !== undefined
     ) {
@@ -453,7 +489,7 @@ export class AllauthClient {
     }
 
     // Add CSRF token to headers if available
-    if (this.clientType === "browser" && !options.skipCSRFToken && csrfToken) {
+    if (!options.skipCSRFToken && csrfToken) {
       headers["X-CSRFToken"] = csrfToken;
     }
 
