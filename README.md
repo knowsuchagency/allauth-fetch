@@ -14,42 +14,22 @@ npx jsr add @knowsuchagency/allauth-fetch
 
 ## Usage
 
-### Importing the AllauthClient
+### Importing the AllauthClient and creating an Instance
 
 ```typescript
 import { AllauthClient } from "@knowsuchagency/allauth-fetch";
-```
 
-### Creating an AllauthClient Instance
+let allauthClient = new AllauthClient("https://api.example.com");
 
-Create an instance of the `AllauthClient` by providing the base URL of the API:
-
-```typescript
-const allauthClient = new AllauthClient("https://api.example.com");
-```
-
-By default, the client type is set to "browser". If you want to use the "app" client type:
-
-```typescript
-const allauthClient = new AllauthClient(
-  "https://api.example.com",
-  "/csrf-token/",
-  "app"
-);
-```
-
-### CSRF Token Support
-
-For browser clients, you can provide a `csrfTokenEndpoint` parameter to specify an endpoint for fetching CSRF tokens. This is useful when your Django backend requires CSRF protection for non-GET requests:
-
-```typescript
-const allauthClient = new AllauthClient(
+// Or with all optional parameters
+allauthClient = new AllauthClient(
   "https://api.example.com", // API base URL
-  "/csrf-token/" // CSRF token endpoint
+  "/csrf-token/", // CSRF token endpoint (optional)
+  "browser" // Client type: "browser" or "app" (defaults to "browser")
 );
 ```
 
-If provided, the client will automatically fetch a CSRF token before making non-GET requests and include it in the `X-CSRFToken` header.
+If a CSRF token endpoint is provided, the client will automatically fetch a CSRF token before making non-GET requests and include it in the `X-CSRFToken` header.
 
 ### Session tokens for app clients
 
@@ -295,7 +275,7 @@ const response = await allauthClient.deleteSession();
 The `AllauthClient` constructor accepts the following parameters:
 
 - `apiBaseUrl`: The base URL of the API.
-- `csrfTokenEndpoint`: (Optional) The endpoint to fetch CSRF tokens from. If provided, the client will automatically fetch a CSRF token before making non-GET requests.
+- `csrfTokenEndpoint`: (Optional) The endpoint to fetch CSRF tokens from. If provided, the client will automatically fetch a CSRF token before making a non-GET request.
 - `clientType`: (Optional) The client type, either `'app'` or `'browser'`. Defaults to `'browser'`.
 - `storage`: (Optional) A custom storage implementation for managing session tokens and CSRF tokens. If not provided, a default cookie-based implementation will be used.
 
