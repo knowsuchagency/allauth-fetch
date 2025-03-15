@@ -432,9 +432,13 @@ export class AllauthClient {
     }
 
     try {
-      const response = await this.customFetch(this.csrfTokenUrl, {
+      const response = await fetch(this.csrfTokenUrl, {
         method: "GET",
-        skipCSRFToken: true, // Skip to prevent infinite recursion
+        credentials: "include",
+        mode: "cors",
+        headers: {
+          Accept: "application/json",
+        },
       });
 
       if (!response.ok) {
@@ -459,13 +463,12 @@ export class AllauthClient {
     }
   }
 
-  private async customFetch(
+  private async fetch(
     url: string,
     options: {
       method?: string;
       headers?: Record<string, string>;
       body?: any;
-      skipCSRFToken?: boolean;
       isFormData?: boolean;
     } = {}
   ): Promise<Response> {
@@ -479,7 +482,6 @@ export class AllauthClient {
     // Fetch CSRF token if endpoint is provided, no token exists, and on non-GET requests
     if (
       this.csrfTokenUrl &&
-      !options.skipCSRFToken &&
       options.method !== "GET" &&
       options.method !== undefined
     ) {
@@ -489,7 +491,7 @@ export class AllauthClient {
     }
 
     // Add CSRF token to headers if available
-    if (!options.skipCSRFToken && csrfToken) {
+    if (csrfToken) {
       headers["X-CSRFToken"] = csrfToken;
     }
 
@@ -531,10 +533,7 @@ export class AllauthClient {
       body?: any;
     }
   ): Promise<T> {
-    const response = await this.customFetch(
-      `${this.apiBaseUrl}${url}`,
-      options
-    );
+    const response = await this.fetch(`${this.apiBaseUrl}${url}`, options);
 
     if (!response.ok) {
       const errorData: ErrorResponse = await response.json();
@@ -682,7 +681,7 @@ export class AllauthClient {
     formData.append("callback_url", callbackUrl);
     formData.append("process", process);
 
-    const response = await this.customFetch(
+    const response = await this.fetch(
       `${this.apiBaseUrl}/auth/provider/redirect`,
       {
         method: "POST",
@@ -935,7 +934,7 @@ export class AllauthClient {
       }
     }
 
-    const response = await this.customFetch(`${this.apiBaseUrl}/auth/session`, {
+    const response = await this.fetch(`${this.apiBaseUrl}/auth/session`, {
       method: "DELETE",
     });
 
