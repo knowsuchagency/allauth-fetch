@@ -22,22 +22,30 @@ import { AllauthClient } from "@knowsuchagency/allauth-fetch";
 
 ### Creating an AllauthClient Instance
 
-Create an instance of the `AllauthClient` by providing the client type (`'app'` or `'browser'`) and the base URL of the API:
+Create an instance of the `AllauthClient` by providing the base URL of the API:
 
 ```typescript
-const allauthClient = new AllauthClient("app", "https://api.example.com");
+const allauthClient = new AllauthClient("https://api.example.com");
+```
+
+By default, the client type is set to "browser". If you want to use the "app" client type:
+
+```typescript
+const allauthClient = new AllauthClient(
+  "https://api.example.com",
+  "/csrf-token/",
+  "app"
+);
 ```
 
 ### CSRF Token Support
 
-For browser clients, you can provide an optional `csrfTokenEndpoint` parameter to specify an endpoint for fetching CSRF tokens. This is useful when your Django backend requires CSRF protection for non-GET requests:
+For browser clients, you can provide a `csrfTokenEndpoint` parameter to specify an endpoint for fetching CSRF tokens. This is useful when your Django backend requires CSRF protection for non-GET requests:
 
 ```typescript
 const allauthClient = new AllauthClient(
-  "browser",
-  "https://api.example.com",
-  "/csrf-token/", // CSRF token endpoint
-  undefined // Using default storage
+  "https://api.example.com", // API base URL
+  "/csrf-token/" // CSRF token endpoint
 );
 ```
 
@@ -55,6 +63,8 @@ The `storage` parameter should conform to the following interface:
 interface SessionStorage {
   getSessionToken(): Promise<string | null>;
   setSessionToken(value: string | null): Promise<void>;
+  getCSRFToken(): Promise<string | null>;
+  setCSRFToken(value: string | null): Promise<void>;
 }
 ```
 
@@ -77,17 +87,20 @@ const customStorage: SessionStorage = {
 };
 
 const allauthClient = new AllauthClient(
-  "app",
-  "https://api.example.com",
-  undefined, // No CSRF token endpoint needed
-  customStorage
+  "https://api.example.com", // API base URL
+  undefined, // No CSRF token endpoint
+  "app", // Client type
+  customStorage // Custom storage implementation
 );
 ```
 
 If you don't provide a custom storage, the client will use a default implementation that uses cookies:
 
 ```typescript
-const allauthClient = new AllauthClient("app", "https://api.example.com");
+const allauthClient = new AllauthClient(
+  "https://api.example.com",
+  "/csrf-token/"
+);
 ```
 
 More information on how headless Allauth handles session tokens can be found [here](https://docs.allauth.org/en/latest/headless/openapi-specification/#section/App-Usage/Session-Tokens).
@@ -281,9 +294,9 @@ const response = await allauthClient.deleteSession();
 
 The `AllauthClient` constructor accepts the following parameters:
 
-- `client`: The client type, either `'app'` or `'browser'`.
 - `apiBaseUrl`: The base URL of the API.
 - `csrfTokenEndpoint`: (Optional) The endpoint to fetch CSRF tokens from. If provided, the client will automatically fetch a CSRF token before making non-GET requests.
+- `clientType`: (Optional) The client type, either `'app'` or `'browser'`. Defaults to `'browser'`.
 - `storage`: (Optional) A custom storage implementation for managing session tokens and CSRF tokens. If not provided, a default cookie-based implementation will be used.
 
 Make sure to provide the correct values based on your API setup.

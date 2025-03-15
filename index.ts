@@ -1,4 +1,4 @@
-type Client = "app" | "browser";
+type ClientType = "app" | "browser";
 
 export interface ConfigurationResponse {
   status: number;
@@ -363,10 +363,10 @@ export interface CSRFTokenResponse {
  * If a response with status code 410 (Gone) is received, it indicates that the session is no longer valid.
  * In this case, the session token should be removed and a new session should be started.
  *
- * @param {Client} client - The client type, either "browser" or "app".
  * @param {string} apiBaseUrl - The base URL of the Allauth API.
- * @param {AsyncStorage | null} storage - An optional instance of AsyncStorage for managing session tokens in app clients.
  * @param {string} csrfTokenEndpoint - The endpoint to fetch CSRF tokens from. If provided, CSRF tokens will be fetched before each non-GET request.
+ * @param {ClientType} clientType - The client type, either "browser" or "app". Defaults to "browser".
+ * @param {SessionStorage} storage - An optional storage implementation for managing session tokens and CSRF tokens.
  */
 export class AllauthClient {
   private apiBaseUrl: string;
@@ -374,12 +374,12 @@ export class AllauthClient {
   private csrfTokenEndpoint?: string;
 
   constructor(
-    private client: Client,
     apiBaseUrl: string,
     csrfTokenEndpoint?: string,
+    private clientType: ClientType = "browser",
     storage?: SessionStorage
   ) {
-    this.apiBaseUrl = `${apiBaseUrl}/_allauth/${client}/v1`;
+    this.apiBaseUrl = `${apiBaseUrl}/_allauth/${clientType}/v1`;
     this.storage = storage || new CookieSessionStorage({ apiUrl: apiBaseUrl });
     this.csrfTokenEndpoint = csrfTokenEndpoint;
   }
@@ -455,7 +455,7 @@ export class AllauthClient {
     }
 
     // Add CSRF token to headers if available
-    if (this.client === "browser" && !options.skipCSRFToken && csrfToken) {
+    if (this.clientType === "browser" && !options.skipCSRFToken && csrfToken) {
       headers["X-CSRFToken"] = csrfToken;
     }
 
@@ -894,7 +894,7 @@ export class AllauthClient {
   }
 
   async logout(): Promise<NoAuthenticatedSessionResponse> {
-    if (this.client === "app") {
+    if (this.clientType === "app") {
       const sessionToken = await this.storage.getSessionToken();
       if (!sessionToken) {
         throw new Error("Session token is required for app client");
@@ -913,7 +913,7 @@ export class AllauthClient {
     const responseJson =
       (await response.json()) as NoAuthenticatedSessionResponse;
 
-    if (this.client === "app") {
+    if (this.clientType === "app") {
       await this.storage.setSessionToken(null);
     }
 
