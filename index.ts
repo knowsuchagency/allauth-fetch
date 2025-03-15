@@ -479,8 +479,6 @@ export class AllauthClient {
       }
     }
 
-    let csrfToken: string | null = null;
-
     // Fetch CSRF token if endpoint is provided, no token exists, and on non-GET requests
     if (
       this.csrfTokenUrl &&
