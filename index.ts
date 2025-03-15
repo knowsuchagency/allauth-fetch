@@ -303,7 +303,7 @@ export class JWTStorage implements StorageInterface {
   }
 }
 
-class CookieSessionStorage implements StorageInterface {
+export class CookieSessionStorage implements StorageInterface {
   private useSecure: boolean;
   private csrfTokenCookieName: string;
 
@@ -383,10 +383,6 @@ class CookieSessionStorage implements StorageInterface {
   }
 }
 
-export interface CSRFTokenResponse {
-  token: string;
-}
-
 /**
  * `AllauthClient` is a class that provides methods to interact with the Allauth API.
  * It supports both browser and app clients.
@@ -415,11 +411,11 @@ export class AllauthClient {
   constructor(
     apiBaseUrl: string,
     csrfTokenEndpoint?: string,
-    clientType: ClientType = "app",
+    clientType: ClientType = "browser",
     storage?: StorageInterface
   ) {
     this.apiBaseUrl = `${apiBaseUrl}/_allauth/${clientType}/v1`;
-    this.storage = storage || new JWTStorage();
+    this.storage = storage || new CookieSessionStorage({ apiUrl: apiBaseUrl });
     this.csrfTokenUrl = csrfTokenEndpoint
       ? `${apiBaseUrl}${csrfTokenEndpoint}`
       : "";
@@ -447,35 +443,41 @@ export class AllauthClient {
       }
 
       // Check for CSRF token in response JSON
-      const data = (await response.json()) as CSRFTokenResponse;
+      const data = await response.json();
       if (data && data.token) {
-        await this.storage.setCSRFToken(data.token);
+        // await this.storage.setCSRFToken(data.token);
         return data.token;
+      } else if (data) {
+        return data;
       }
 
       // If no token in body, it might be set as a cookie directly by the server
       // Let the storage check if it was updated
-      const cookieToken = await this.storage.getCSRFToken();
-      return cookieToken;
+      const cookieToken = getCookie("csrftoken");
+      if (cookieToken) {
+        return cookieToken;
+      }
     } catch (error) {
       console.error("Error fetching CSRF token:", error);
       return null;
     }
+
+    return null; // Ensure all code paths return a value
   }
 
   private async fetch(
     url: string,
-    options: {
-      method?: string;
-      headers?: Record<string, string>;
-      body?: any;
-      isFormData?: boolean;
-    } = {}
+    options: RequestInit = {}
   ): Promise<Response> {
-    const headers: Record<string, string> = {
-      ...(options.isFormData ? {} : { "Content-Type": "application/json" }),
-      ...options.headers,
-    };
+    // Create headers object from existing headers or a new object
+    const headers = new Headers(options.headers || {});
+
+    // Set default content type if not form data and not already set
+    if (!options.body || !(options.body instanceof FormData)) {
+      if (!headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+    }
 
     let csrfToken: string | null = null;
 
@@ -485,37 +487,38 @@ export class AllauthClient {
       options.method !== "GET" &&
       options.method !== undefined
     ) {
-      await this.fetchCSRFToken();
-      // Get the newly fetched token
-      csrfToken = await this.storage.getCSRFToken();
-    }
-
-    // Add CSRF token to headers if available
-    if (csrfToken) {
-      headers["X-CSRFToken"] = csrfToken;
+      const csrfToken = await this.fetchCSRFToken();
+      if (csrfToken) {
+        headers.set("X-CSRFToken", csrfToken);
+        await this.storage.setCSRFToken(csrfToken);
+      }
     }
 
     // Add session token if available
     const sessionToken = await this.storage.getSessionToken();
     if (sessionToken) {
-      headers["X-Session-Token"] = sessionToken;
+      headers.set("X-Session-Token", sessionToken);
     }
 
     // Prepare the body based on whether it's form data or JSON
-    let fetchBody: any = undefined;
-    if (options.body) {
-      fetchBody = options.isFormData
-        ? options.body
-        : JSON.stringify(options.body);
+    let fetchBody = options.body;
+    if (
+      fetchBody &&
+      !(fetchBody instanceof FormData) &&
+      typeof fetchBody === "object"
+    ) {
+      fetchBody = JSON.stringify(fetchBody);
     }
 
-    const response = await fetch(url, {
-      method: options.method || "GET",
+    const fetchOptions: RequestInit = {
+      ...options,
       headers,
       credentials: "include",
       mode: "cors",
       body: fetchBody,
-    });
+    };
+
+    const response = await fetch(url, fetchOptions);
 
     // Handle session invalidation
     if (response.status === 410) {
@@ -525,7 +528,7 @@ export class AllauthClient {
     return response;
   }
 
-  private async fetchData<T>(
+  private async request<T>(
     url: string,
     options?: {
       method?: string;
@@ -558,7 +561,7 @@ export class AllauthClient {
   }
 
   async getConfiguration(): Promise<ConfigurationResponse> {
-    return this.fetchData<ConfigurationResponse>("/config");
+    return this.request<ConfigurationResponse>("/config");
   }
 
   async login(data: {
@@ -568,7 +571,7 @@ export class AllauthClient {
   }): Promise<
     AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse
   > {
-    return this.fetchData<
+    return this.request<
       AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse
     >("/auth/login", {
       method: "POST",
@@ -586,7 +589,7 @@ export class AllauthClient {
     | NotAuthenticatedResponse
     | ForbiddenResponse
   > {
-    return this.fetchData<
+    return this.request<
       | AuthenticatedResponse
       | ErrorResponse
       | NotAuthenticatedResponse
@@ -601,7 +604,7 @@ export class AllauthClient {
     key: string
   ): Promise<EmailVerificationInfoResponse | ErrorResponse> {
     const headers = { "X-Email-Verification-Key": key };
-    return this.fetchData<EmailVerificationInfoResponse | ErrorResponse>(
+    return this.request<EmailVerificationInfoResponse | ErrorResponse>(
       "/auth/email/verify",
       {
         headers,
@@ -614,7 +617,7 @@ export class AllauthClient {
   }): Promise<
     AuthenticatedResponse | ErrorResponse | NoAuthenticatedSessionResponse
   > {
-    return this.fetchData<
+    return this.request<
       AuthenticatedResponse | ErrorResponse | NoAuthenticatedSessionResponse
     >("/auth/email/verify", {
       method: "POST",
@@ -625,7 +628,7 @@ export class AllauthClient {
   async reauthenticate(data: {
     password: string;
   }): Promise<AuthenticatedResponse | ErrorResponse> {
-    return this.fetchData<AuthenticatedResponse | ErrorResponse>(
+    return this.request<AuthenticatedResponse | ErrorResponse>(
       "/auth/reauthenticate",
       {
         method: "POST",
@@ -637,7 +640,7 @@ export class AllauthClient {
   async requestPassword(data: {
     email: string;
   }): Promise<{ status: 200 } | ErrorResponse> {
-    return this.fetchData<{ status: 200 } | ErrorResponse>(
+    return this.request<{ status: 200 } | ErrorResponse>(
       "/auth/password/request",
       {
         method: "POST",
@@ -652,7 +655,7 @@ export class AllauthClient {
     const headers: Record<string, string> = {
       "X-Password-Reset-Key": key,
     };
-    return this.fetchData<PasswordResetInfoResponse | ErrorResponse>(
+    return this.request<PasswordResetInfoResponse | ErrorResponse>(
       "/auth/password/reset",
       { headers }
     );
@@ -662,7 +665,7 @@ export class AllauthClient {
     key: string;
     password: string;
   }): Promise<{ status: 200 } | ErrorResponse> {
-    return this.fetchData<{ status: 200 } | ErrorResponse>(
+    return this.request<{ status: 200 } | ErrorResponse>(
       "/auth/password/reset",
       {
         method: "POST",
@@ -686,7 +689,6 @@ export class AllauthClient {
       {
         method: "POST",
         body: formData,
-        isFormData: true,
       }
     );
 
@@ -713,7 +715,7 @@ export class AllauthClient {
     | ErrorResponse
     | ForbiddenResponse
   > {
-    return this.fetchData<
+    return this.request<
       | AuthenticatedResponse
       | NotAuthenticatedResponse
       | ErrorResponse
@@ -733,7 +735,7 @@ export class AllauthClient {
     | ForbiddenResponse
     | { status: 409 }
   > {
-    return this.fetchData<
+    return this.request<
       | AuthenticatedResponse
       | NotAuthenticatedResponse
       | ErrorResponse
@@ -750,7 +752,7 @@ export class AllauthClient {
   }): Promise<
     AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse
   > {
-    return this.fetchData<
+    return this.request<
       AuthenticatedResponse | ErrorResponse | NotAuthenticatedResponse
     >("/auth/2fa/authenticate", {
       method: "POST",
@@ -759,7 +761,7 @@ export class AllauthClient {
   }
 
   async mfaReauthenticate(): Promise<AuthenticatedResponse | ErrorResponse> {
-    return this.fetchData<AuthenticatedResponse | ErrorResponse>(
+    return this.request<AuthenticatedResponse | ErrorResponse>(
       "/auth/2fa/reauthenticate",
       {
         method: "POST",
@@ -770,7 +772,7 @@ export class AllauthClient {
   async requestLoginCode(data: {
     email: string;
   }): Promise<ErrorResponse | NotAuthenticatedResponse> {
-    return this.fetchData<ErrorResponse | NotAuthenticatedResponse>(
+    return this.request<ErrorResponse | NotAuthenticatedResponse>(
       "/auth/code/request",
       {
         method: "POST",
@@ -784,7 +786,7 @@ export class AllauthClient {
   }): Promise<
     AuthenticatedResponse | NotAuthenticatedResponse | ErrorResponse
   > {
-    return this.fetchData<
+    return this.request<
       AuthenticatedResponse | NotAuthenticatedResponse | ErrorResponse
     >("/auth/code/confirm", {
       method: "POST",
@@ -793,14 +795,14 @@ export class AllauthClient {
   }
 
   async listProviderAccounts(): Promise<ProviderAccountsResponse> {
-    return this.fetchData<ProviderAccountsResponse>("/account/providers");
+    return this.request<ProviderAccountsResponse>("/account/providers");
   }
 
   async disconnectProviderAccount(data: {
     provider: string;
     account: string;
   }): Promise<ProviderAccountsResponse | ErrorResponse> {
-    return this.fetchData<ProviderAccountsResponse | ErrorResponse>(
+    return this.request<ProviderAccountsResponse | ErrorResponse>(
       "/account/providers",
       {
         method: "DELETE",
@@ -812,7 +814,7 @@ export class AllauthClient {
   async listEmailAddresses(): Promise<
     EmailAddressesResponse | NotAuthenticatedResponse
   > {
-    return this.fetchData<EmailAddressesResponse | NotAuthenticatedResponse>(
+    return this.request<EmailAddressesResponse | NotAuthenticatedResponse>(
       "/account/email"
     );
   }
@@ -822,7 +824,7 @@ export class AllauthClient {
   }): Promise<
     EmailAddressesResponse | ErrorResponse | NotAuthenticatedResponse
   > {
-    return this.fetchData<
+    return this.request<
       EmailAddressesResponse | ErrorResponse | NotAuthenticatedResponse
     >("/account/email", {
       method: "POST",
@@ -833,7 +835,7 @@ export class AllauthClient {
   async requestEmailVerification(data: {
     email: string;
   }): Promise<{ status: 200 | 400 | 403 }> {
-    return this.fetchData<{ status: 200 | 400 | 403 }>("/account/email", {
+    return this.request<{ status: 200 | 400 | 403 }>("/account/email", {
       method: "PUT",
       body: data,
     });
@@ -843,7 +845,7 @@ export class AllauthClient {
     email: string;
     primary: true;
   }): Promise<EmailAddressesResponse | ErrorResponse> {
-    return this.fetchData<EmailAddressesResponse | ErrorResponse>(
+    return this.request<EmailAddressesResponse | ErrorResponse>(
       "/account/email",
       {
         method: "PATCH",
@@ -855,7 +857,7 @@ export class AllauthClient {
   async removeEmailAddress(data: {
     email: string;
   }): Promise<EmailAddressesResponse | ErrorResponse> {
-    return this.fetchData<EmailAddressesResponse | ErrorResponse>(
+    return this.request<EmailAddressesResponse | ErrorResponse>(
       "/account/email",
       {
         method: "DELETE",
@@ -865,13 +867,13 @@ export class AllauthClient {
   }
 
   async listAuthenticators(): Promise<AuthenticatorsResponse> {
-    return this.fetchData<AuthenticatorsResponse>("/account/authenticators");
+    return this.request<AuthenticatorsResponse>("/account/authenticators");
   }
 
   async getTOTPAuthenticator(): Promise<
     TOTPAuthenticatorResponse | NoTOTPAuthenticatorResponse
   > {
-    return this.fetchData<
+    return this.request<
       TOTPAuthenticatorResponse | NoTOTPAuthenticatorResponse
     >("/account/authenticators/totp");
   }
@@ -879,7 +881,7 @@ export class AllauthClient {
   async activateTOTP(data: {
     code: string;
   }): Promise<TOTPAuthenticatorResponse | ErrorResponse> {
-    return this.fetchData<TOTPAuthenticatorResponse | ErrorResponse>(
+    return this.request<TOTPAuthenticatorResponse | ErrorResponse>(
       "/account/authenticators/totp",
       {
         method: "POST",
@@ -889,24 +891,21 @@ export class AllauthClient {
   }
 
   async deactivateTOTP(): Promise<{ status: 200 | 401 }> {
-    return this.fetchData<{ status: 200 | 401 }>(
-      "/account/authenticators/totp",
-      {
-        method: "DELETE",
-      }
-    );
+    return this.request<{ status: 200 | 401 }>("/account/authenticators/totp", {
+      method: "DELETE",
+    });
   }
 
   async listRecoveryCodes(): Promise<
     SensitiveRecoveryCodesAuthenticatorResponse | { status: 401 | 404 }
   > {
-    return this.fetchData<
+    return this.request<
       SensitiveRecoveryCodesAuthenticatorResponse | { status: 401 | 404 }
     >("/account/authenticators/recovery_codes");
   }
 
   async regenerateRecoveryCodes(): Promise<ErrorResponse | { status: 401 }> {
-    return this.fetchData<ErrorResponse | { status: 401 }>(
+    return this.request<ErrorResponse | { status: 401 }>(
       "/account/authenticators/recovery_codes",
       {
         method: "POST",
@@ -919,7 +918,7 @@ export class AllauthClient {
     | NotAuthenticatedResponse
     | SessionInvalidOrNoLongerExists
   > {
-    return this.fetchData<
+    return this.request<
       | AuthenticatedResponse
       | NotAuthenticatedResponse
       | SessionInvalidOrNoLongerExists
@@ -957,7 +956,7 @@ export class AllauthClient {
     current_password?: string;
     new_password: string;
   }): Promise<NotAuthenticatedResponse | ErrorResponse> {
-    return this.fetchData<NotAuthenticatedResponse | ErrorResponse>(
+    return this.request<NotAuthenticatedResponse | ErrorResponse>(
       "/account/password/change",
       {
         method: "POST",
@@ -967,10 +966,10 @@ export class AllauthClient {
   }
 
   async listSessions(): Promise<SessionsResponse> {
-    return this.fetchData<SessionsResponse>("/sessions");
+    return this.request<SessionsResponse>("/sessions");
   }
 
   async deleteSession(): Promise<SessionsResponse> {
-    return this.fetchData<SessionsResponse>("/sessions", { method: "DELETE" });
+    return this.request<SessionsResponse>("/sessions", { method: "DELETE" });
   }
 }
