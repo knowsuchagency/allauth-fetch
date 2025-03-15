@@ -371,29 +371,27 @@ export interface CSRFTokenResponse {
 export class AllauthClient {
   private apiBaseUrl: string;
   private storage: SessionStorage;
-  private csrfTokenEndpoint?: string;
-
+  private csrfTokenUrl: string;
+  private clientType: ClientType;
   constructor(
     apiBaseUrl: string,
     csrfTokenEndpoint?: string,
-    private clientType: ClientType = "browser",
+    clientType: ClientType = "browser",
     storage?: SessionStorage
   ) {
     this.apiBaseUrl = `${apiBaseUrl}/_allauth/${clientType}/v1`;
     this.storage = storage || new CookieSessionStorage({ apiUrl: apiBaseUrl });
-    this.csrfTokenEndpoint = csrfTokenEndpoint;
+    this.csrfTokenUrl = `${apiBaseUrl}${csrfTokenEndpoint}`;
   }
 
-  private async fetchCSRFToken(): Promise<string | null> {
-    if (!this.csrfTokenEndpoint) {
+  async fetchCSRFToken(): Promise<string | null> {
+    if (!this.csrfTokenUrl) {
       return null;
     }
 
     try {
-      const response = await this.customFetch(
-        `${this.apiBaseUrl}${this.csrfTokenEndpoint}`,
-        {
-          method: "GET",
+      const response = await this.customFetch(this.csrfTokenUrl, {
+        method: "GET",
           skipCSRFToken: true, // Skip to prevent infinite recursion
         }
       );
@@ -437,13 +435,13 @@ export class AllauthClient {
 
     // Check if we already have a CSRF token in storage
     let csrfToken: string | null = null;
-    if (this.csrfTokenEndpoint && !options.skipCSRFToken) {
+    if (this.csrfTokenUrl && !options.skipCSRFToken) {
       csrfToken = await this.storage.getCSRFToken();
     }
 
     // Fetch CSRF token if endpoint is provided, no token exists, and on non-GET requests
     if (
-      this.csrfTokenEndpoint &&
+      this.csrfTokenUrl &&
       !options.skipCSRFToken &&
       !csrfToken &&
       options.method !== "GET" &&
