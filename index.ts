@@ -945,10 +945,6 @@ export class AllauthClient {
 
     if (this.clientType === "app") {
       await this.storage.setSessionToken(null);
-    } else if (this.clientType === "browser") {
-      // Clear sessionid cookie by just setting expiration to the past
-      document.cookie =
-        "sessionid=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     }
 
     return responseJson;
