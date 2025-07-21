@@ -398,7 +398,7 @@ export class CookieSessionStorage implements StorageInterface {
  * If a response with status code 410 (Gone) is received, it indicates that the session is no longer valid.
  * In this case, the session token should be removed and a new session should be started.
  *
- * @param {string} apiBaseUrl - The base URL of the Allauth API.
+ * @param {string} apiBaseUrl - The base URL of the Allauth API. If not provided, assumes the client is served from the same domain as the Django app.
  * @param {string} csrfTokenEndpoint - The endpoint to fetch CSRF tokens from. If provided, CSRF tokens will be fetched before each non-GET request.
  * @param {ClientType} clientType - The client type, either "browser" or "app". Defaults to "browser".
  * @param {StorageInterface} storage - An optional storage implementation for managing session tokens and CSRF tokens.
@@ -409,15 +409,15 @@ export class AllauthClient {
   private csrfTokenUrl: string;
   private clientType: ClientType;
   constructor(
-    apiBaseUrl: string,
+    apiBaseUrl: string = "",
     csrfTokenEndpoint?: string,
     clientType: ClientType = "browser",
     storage?: StorageInterface
   ) {
-    this.apiBaseUrl = `${apiBaseUrl}/_allauth/${clientType}/v1`;
+    this.apiBaseUrl = apiBaseUrl ? `${apiBaseUrl}/_allauth/${clientType}/v1` : `/_allauth/${clientType}/v1`;
     this.storage = storage || new CookieSessionStorage({ apiUrl: apiBaseUrl });
     this.csrfTokenUrl = csrfTokenEndpoint
-      ? `${apiBaseUrl}${csrfTokenEndpoint}`
+      ? (apiBaseUrl ? `${apiBaseUrl}${csrfTokenEndpoint}` : csrfTokenEndpoint)
       : "";
     this.clientType = clientType;
   }
