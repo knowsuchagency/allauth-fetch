@@ -19,11 +19,18 @@ npx jsr add @knowsuchagency/allauth-fetch
 ```typescript
 import { AllauthClient } from "@knowsuchagency/allauth-fetch";
 
-let allauthClient = new AllauthClient("https://api.example.com");
+// When served from the same domain as Django app (no base URL needed)
+let allauthClient = new AllauthClient();
+
+// With a custom base URL
+allauthClient = new AllauthClient("https://api.example.com");
+
+// With a relative path (e.g., if your React app is not at the index)
+allauthClient = new AllauthClient("/api");
 
 // Or with all optional parameters
 allauthClient = new AllauthClient(
-  "https://api.example.com", // API base URL
+  "https://api.example.com", // API base URL (optional, defaults to current domain)
   "/csrf-token/", // CSRF token endpoint (optional)
   "browser" // Client type: "browser" or "app" (defaults to "browser")
 );
